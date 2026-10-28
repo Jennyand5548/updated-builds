@@ -1,0 +1,38 @@
+name: Ditto portable
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Get latest Ditto source
+        uses: actions/checkout@v4
+        with:
+          repository: sabrogden/Ditto
+          ref: master
+      - uses: microsoft/setup-msbuild@v2
+      - uses: nuget/setup-nuget@v2
+      - name: Install Inno Setup (in case the packaging script needs it)
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+      - name: Set version
+        shell: pwsh
+        run: |
+          "VERSION_FILENAME=3_25_${{ github.run_number }}_0" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "VERSION_DOT=3.25.${{ github.run_number }}.0" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Restore NuGet packages
+        run: nuget restore CP_Main_10.sln
+      - name: Build x64
+        run: msbuild CP_Main_10.sln /p:Configuration=Release /p:Platform=x64
+      - name: Stamp version
+        run: DittoSetup\rcedit-x64 Release64\Ditto.exe --set-file-version ${{ env.VERSION_DOT }} --set-product-version ${{ env.VERSION_DOT }}
+      - name: Build portable zip
+        shell: cmd
+        run: |
+          if not exist DittoSetup\output mkdir DittoSetup\output
+          call DittoSetup\BuildPortableZIP.bat "DittoPortable_%VERSION_FILENAME%" bit64
+          dir DittoSetup\output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ditto-portable
+          path: DittoSetup/output/*.zip
+          if-no-files-found: error
