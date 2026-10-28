@@ -1,5 +1,7 @@
 name: PasteBar portable
 on: workflow_dispatch
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -16,11 +18,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: Show Tauri config (diagnostics)
-        shell: pwsh
-        run: |
-          Get-Content src-tauri/tauri.conf.json
-          Get-Content src-tauri/tauri.release.conf.json
       - name: Install npm packages
         run: npm install
       - name: Build (installer/signing step may fail, that is OK)
@@ -30,15 +27,20 @@ jobs:
         shell: pwsh
         run: |
           $rel = "src-tauri/target/release"
-          Get-ChildItem $rel -File | Format-Table Name, Length
           $exe = Get-ChildItem $rel -Filter *.exe -File | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1
           if (-not $exe) { throw "No app .exe was produced - the build really failed, check the Build step log" }
           New-Item -ItemType Directory -Force out | Out-Null
           Copy-Item $exe.FullName out/
           Get-ChildItem $rel -Filter *.dll -File | Copy-Item -Destination out/
           Compress-Archive -Path out/* -DestinationPath PasteBar_portable_x64.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: PasteBar-portable
-          path: PasteBar_portable_x64.zip
-          if-no-files-found: error
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ver = (node -p "require('./package.json').version").Trim()
+          $sha = (git rev-parse HEAD).Trim()
+          $name = "PasteBar_${ver}_x64-portable.zip"
+          Rename-Item PasteBar_portable_x64.zip $name
+          $notes = "Unsigned x64 portable build of PasteBar, built from upstream main.`n`nUpstream commit: https://github.com/PasteBar/PasteBarApp/commit/$sha"
+          gh release create "pastebar-$ver-build${{ github.run_number }}" $name --repo "${{ github.repository }}" --title "PasteBar $ver portable (build ${{ github.run_number }})" --notes $notes
