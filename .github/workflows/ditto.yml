@@ -1,5 +1,7 @@
 name: Ditto portable
 on: workflow_dispatch
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -31,8 +33,12 @@ jobs:
           if not exist DittoSetup\output mkdir DittoSetup\output
           call DittoSetup\BuildPortableZIP.bat "DittoPortable_%VERSION_FILENAME%" bit64
           dir DittoSetup\output
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Ditto-portable
-          path: DittoSetup/output/*.zip
-          if-no-files-found: error
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $sha = (git rev-parse HEAD).Trim()
+          $zip = (Get-ChildItem DittoSetup/output/*.zip).FullName
+          $notes = "Unsigned x64 portable build of Ditto, built from upstream master.`n`nUpstream commit: https://github.com/sabrogden/Ditto/commit/$sha"
+          gh release create "ditto-3.25.${{ github.run_number }}" $zip --repo "${{ github.repository }}" --title "Ditto portable $env:VERSION_FILENAME" --notes $notes
